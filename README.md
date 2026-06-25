@@ -1,152 +1,89 @@
-# rancher-logging — SUSE BCI image rebuild experiment
+# rancher-logging fork workspace
 
-This repo documents and supports a proof-of-concept for rebuilding the four
-container images consumed by the Rancher `rancher-logging` 4.10 chart on a
-[SUSE BCI](https://registry.suse.com/bci/bci-base) base, replacing the
-upstream Alpine / Sumologic bundles.
+Local checkout grouping the four upstream repos that together produce the
+images consumed by the Rancher `rancher-logging` 4.10 chart, plus the chart
+repo that ships them.
 
-The goal is a clean supply chain: no third-party pre-built gem/binary bundles,
-images rooted in a SUSE-maintained base that receives continuous CVE fixes,
-and an automated update pipeline so security patches land without human
-intervention.
+## Layout
 
-## Images
+| Directory | Upstream | Fork | Role |
+|---|---|---|---|
+| [`logging-operator/`](https://github.com/manno/logging-operator) | `kube-logging/logging-operator` | `manno/logging-operator` (branch `rancher-main`) | Operator binary + SUSE image |
+| [`config-reloader/`](https://github.com/manno/config-reloader/blob/rancher-main/RANCHER.md) | `kube-logging/config-reloader` | `manno/config-reloader` | Config-reloader sidecar SUSE image |
+| [`fluent-bit/`](https://github.com/manno/fluent-bit/blob/rancher-main/RANCHER.md) | `fluent/fluent-bit` | `manno/fluent-bit` | Fluent-bit SUSE image |
+| [`fluentd/`](https://github.com/manno/fluentd/blob/rancher-main/RANCHER.md) | `kube-logging/fluentd-images` | `manno/fluentd` (branch `rancher-main`, scope `v1.16-4.10/`) | Fluentd image — **SUSE pipeline green**, parallel to Alpine on branch `bci-ruby-migration` ([PR #6](https://github.com/manno/fluentd/pull/6)); awaiting smoke test |
 
-All images are published to [ghcr.io/manno](https://github.com/manno?tab=packages):
+The chart that consumes these images lives in a sibling checkout:
+`../ob-team-charts/packages/rancher-logging/4.10/`.
 
-| Image | Fork | Tags |
-|---|---|---|
-| `ghcr.io/manno/logging-operator` | [manno/logging-operator](https://github.com/manno/logging-operator) | `dev-<sha>`, `latest` |
-| `ghcr.io/manno/config-reloader` | [manno/config-reloader](https://github.com/manno/config-reloader) | `dev-<sha>`, `latest` |
-| `ghcr.io/manno/fluent-bit` | [manno/fluent-bit](https://github.com/manno/fluent-bit) | `dev-<sha>`, `latest` (Alpine), `latest-suse` (SUSE BCI) |
-| `ghcr.io/manno/fluentd` | [manno/fluentd](https://github.com/manno/fluentd) | `v1.16-4.10-{base,filters,full}` (Alpine), `v1.16-4.10-{base,filters,full}-suse` (SUSE BCI) |
+## Design docs (`docs/fork/`)
 
-All four GHCR namespaces are public — no auth needed to pull.
+Design and current-state docs for the fork POC live in
+[`docs/fork/`](docs/fork/):
 
-## Fork overview
+| Doc | What it is |
+|---|---|
+| [`docs/fork/SETUP.md`](docs/fork/SETUP.md) | **Try it out or fork it** — forks, smoke test, key choices, what's missing |
+| [`docs/fork/STATE.md`](docs/fork/STATE.md) | **Current-state snapshot** — full detail for picking up the work cold |
 
-Each fork tracks a single upstream at a pinned version. Security comes from
-rebuilding with fresh base images and updated dependencies, not from
-cherry-picking upstream code changes.
+## Status snapshot
 
-### [manno/logging-operator](https://github.com/manno/logging-operator) · [manno/config-reloader](https://github.com/manno/config-reloader)
+- Code is **frozen at upstream 4.10.0**. Security comes from rebuilding with
+  fresh Go / BCI / gems, not from cherry-picking upstream code.
+- All 4 images now build on SUSE BCI. **Fluentd SUSE pipeline is green**
+  on `bci-ruby-migration` ([PR #6](https://github.com/manno/fluentd/pull/6))
+  in parallel with the Alpine track; next step is the smoke test
+  against `ob-team-charts` — see [`fluentd/RANCHER.md`](https://github.com/manno/fluentd/blob/rancher-main/RANCHER.md).
+  Alpine + Sumologic pipeline stays live (`v1.16-4.10-{base,filters,full}`)
+  while the parallel SUSE pipeline iterates on
+  `v1.16-4.10-{base,filters,full}-suse` tags.
+- Image visibility on GHCR (as of latest smoke test): `logging-operator`
+  public; `config-reloader` and `fluent-bit` still private.
+- Chart bump landed in `ob-team-charts` as commit
+  `656f38d bump rancher-logging to 4.10.0-rancher.24-suse1 with SUSE images`.
 
-Go binaries. Built with the latest Go toolchain on `bci/golang`, shipped
-in `bci/bci-base`. Renovate handles Go module updates; a daily
-`auto-update-bci.yaml` workflow rebuilds when a new BCI base image is
-published.
+## Automation (shared shape across forks)
 
-### [manno/fluent-bit](https://github.com/manno/fluent-bit)
+| Layer | Mechanism |
+|---|---|
+| Continuous | Renovate (`renovate.json5`) — Go modules / gems, vuln + patch auto-merge |
+| Daily | `auto-update-go.yaml`, `auto-update-bci.yaml` (Go forks only) |
+| Triggered | `.github/workflows/cve-response.md` — agentic CVE response, called by `image-scanning` repo via `gh workflow run` |
+| Weekly | `.github/workflows/weekly-health-check.md` — agentic meta-monitor |
+| Push to `rancher-main` | `build.yaml` (Go forks, goreleaser) / `artifacts.yaml` (fluentd) — multi-arch build + push to `ghcr.io/manno/*` |
 
-C/C++ binary. Built from source via the upstream CMake pipeline, on
-`bci/bci-base` with SUSE packages for OpenSSL, SASL, libsystemd, etc.
-
-### [manno/fluentd](https://github.com/manno/fluentd)
-
-Ruby gem bundle — the most complex migration. The upstream image used a
-Sumologic pre-built gem archive on Alpine. This fork builds all ~80 gems
-(including native extensions) from source on `bci/bci-base`. The build
-requires several libraries vendored from source that are not in the SLE_BCI
-repo:
-
-- **Legacy libGeoIP** (retired by MaxMind in 2018) — built from
-  [`GeoIP-1.6.12`](https://github.com/maxmind/geoip-api-c/releases/tag/v1.6.12)
-  for the `geoip-c` gem
-- **libmaxminddb** — vendored by the `geoip2_c` gem itself via autotools;
-  no system package needed
-
-The SUSE pipeline runs in parallel with the existing Alpine pipeline on branch
-[`bci-ruby-migration`](https://github.com/manno/fluentd/tree/bci-ruby-migration)
-([PR #6](https://github.com/manno/fluentd/pull/6)).
-
-## Automation
-
-Each fork has the same automation stack:
-
-| Layer | Mechanism | Purpose |
-|---|---|---|
-| Continuous | Renovate (`renovate.json5`) | Dependency bumps — vuln/patch auto-merge |
-| Daily | `auto-update-go.yaml` / `auto-update-bci.yaml` | Rebuild when upstream Go or BCI base image is updated |
-| CVE response | `cve-response.md` (agentic) | Called by an image-scanning repo via `gh workflow run` for long-tail CVEs |
-| Weekly | `weekly-health-check.md` (agentic) | Audit Renovate flow, base freshness, bundler-audit |
-| Push to `rancher-main` | `build.yaml` / `artifacts.yaml` | Multi-arch build + push to `ghcr.io/manno/*` |
+Per-fork deviations are documented in each `RANCHER.md`. The largest deviation
+is fluentd (no Go, no BCI auto-update, no goreleaser — see its RANCHER.md).
 
 ## Testing
 
-### Quick start with k3d
+Smoke test for the full image set against a live cluster:
 
-[`k3d-import.sh`](k3d-import.sh) pulls all four SUSE images from GHCR and
-loads them into a running k3d cluster via `k3d image import`:
+- Script: `../ob-team-charts/dev-scripts/smoke-test-rancher-logging.sh`
+  (branch `add-rancher-logging-smoke-test` of `manno/ob-team-charts`)
+- Usage notes: `../ob-team-charts/dev/smoke-test-instructions.md`
+  (local-only — `dev/` is gitignored)
 
-```bash
-# prerequisites: docker, k3d, an existing cluster
-k3d cluster create rancher-logging-test
+The script installs the upstream operator chart, overrides each image via a
+`Logging` CR, waits for fluent-bit + fluentd Ready, then verifies a sentinel
+log line flows end-to-end. Parameterized for reuse in a release pipeline
+(see the Actions snippet at the bottom of the instructions file).
 
-./k3d-import.sh          # loads SUSE images into cluster 'k3s-default'
-CLUSTER=rancher-logging-test ./k3d-import.sh   # specific cluster name
-```
+Open gaps the smoke test does NOT cover:
 
-The script prints a ready-to-paste env-var block for the smoke test at the end.
+- Rendering the rancher-modified chart from `packages/rancher-logging/4.10/`
+  (uses the upstream chart + value overrides instead).
+- The Windows nodeagent fluent-bit image (no SUSE Windows variant exists).
+- The `fluentbit_debug` codepath (debug collapsed into the production image).
 
-**Other modes:**
+## References
 
-```bash
-VARIANT=alpine ./k3d-import.sh               # Alpine images instead
-VARIANT=both   ./k3d-import.sh               # load both, for A/B comparison
-TAG=dev-1ac7739f ./k3d-import.sh             # specific commit-sha tag
-
-# Push to a k3d-managed registry instead of direct import:
-K3D_REGISTRY=k3d-registry.localhost:5000 ./k3d-import.sh
-```
-
-### Smoke test
-
-[`smoke-test-rancher-logging.sh`](smoke-test-rancher-logging.sh) installs the
-upstream logging-operator Helm chart, deploys a `Logging` CR with the custom
-images, and verifies that a sentinel log line flows end-to-end from a test pod
-through fluent-bit → fluentd.
-
-```bash
-# After k3d-import.sh, use the printed env vars:
-IMAGE_LOGGING_OPERATOR=ghcr.io/manno/logging-operator:latest \
-  IMAGE_CONFIG_RELOADER=ghcr.io/manno/config-reloader:latest \
-  IMAGE_FLUENT_BIT=ghcr.io/manno/fluent-bit:latest-suse \
-  IMAGE_FLUENTD=ghcr.io/manno/fluentd:v1.16-4.10-full-suse \
-  ./smoke-test-rancher-logging.sh
-```
-
-Parameterization:
-
-| Variable | Default | Description |
-|---|---|---|
-| `IMAGE_LOGGING_OPERATOR` | `ghcr.io/manno/logging-operator:dev-1ac7739f` | Operator image |
-| `IMAGE_CONFIG_RELOADER` | `ghcr.io/manno/config-reloader:dev-e7126dbf` | Config-reloader image |
-| `IMAGE_FLUENT_BIT` | `ghcr.io/manno/fluent-bit:dev-1647f32fb` | Fluent-bit image |
-| `IMAGE_FLUENTD` | `rancher/mirrored-kube-logging-fluentd:v1.16-4.10-full` | Fluentd image |
-| `CHART_REF` | `oci://ghcr.io/kube-logging/helm-charts/logging-operator` | Helm chart OCI ref |
-| `CHART_VERSION` | `4.10.0` | Chart version |
-| `NAMESPACE` | `cattle-logging-system` | Target namespace |
-| `SKIP_LOG_FLOW_TEST` | _(unset)_ | Set to `1` to skip end-to-end log-flow check |
-| `KEEP` | _(unset)_ | Set to `1` to leave cluster state for debugging |
-
-**Full SUSE example** — load images and run smoke test against k3d:
-
-```bash
-k3d cluster create rancher-logging-test
-CLUSTER=rancher-logging-test ./k3d-import.sh
-# copy the printed IMAGE_* vars, then:
-IMAGE_LOGGING_OPERATOR=ghcr.io/manno/logging-operator:latest \
-  IMAGE_CONFIG_RELOADER=ghcr.io/manno/config-reloader:latest \
-  IMAGE_FLUENT_BIT=ghcr.io/manno/fluent-bit:latest-suse \
-  IMAGE_FLUENTD=ghcr.io/manno/fluentd:v1.16-4.10-full-suse \
-  ./smoke-test-rancher-logging.sh
-```
-
-## Status
-
-| Image | SUSE build | Notes |
-|---|---|---|
-| logging-operator | ✅ | `rancher-main` branch, goreleaser + BCI |
-| config-reloader | ✅ | `rancher-main` branch |
-| fluent-bit | ✅ | `rancher-main` branch |
-| fluentd | ✅ pipeline green | Alpine track still running in parallel; smoke test pending |
+- Per-fork details: [`logging-operator`](https://github.com/manno/logging-operator),
+  [`config-reloader/RANCHER.md`](https://github.com/manno/config-reloader/blob/rancher-main/RANCHER.md),
+  [`fluent-bit/RANCHER.md`](https://github.com/manno/fluent-bit/blob/rancher-main/RANCHER.md),
+  [`fluentd/RANCHER.md`](https://github.com/manno/fluentd/blob/rancher-main/RANCHER.md)
+- Design docs: [`docs/fork/`](docs/fork/) — start with
+  [`STATE.md`](docs/fork/STATE.md) for the current snapshot,
+  [`proposal.md`](docs/fork/proposal.md) for background
+- Agentic workflow guide: `../ob-team-charts/docs/AGENTIC-WORKFLOWS-GUIDE.md`
+- Upstream operator docs: <https://kube-logging.dev/>

@@ -1,0 +1,10 @@
+config-reloader/
+fluent-bit/
+fluentd/
+logging-operator/
+docs/fork/README-old.md
+docs/fork/agentic-real-examples.md
+docs/fork/agentic-workflows.md
+docs/fork/implementation-guide.md
+docs/fork/poc.md
+docs/fork/proposal.md
