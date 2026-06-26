@@ -46,7 +46,7 @@ Build a system to replace upstream rancher-logging stack images with **Rancher-b
 
 ### What's Pending
 
-1. **Per-fork repo setup** still pending for `config-reloader`, `fluent-bit`, `fluentd` — labels, COPILOT_GITHUB_TOKEN, PR-creation permission (see "Repo Setup Requirements" below). logging-operator was set up early.
+1. **Per-fork repo setup** — labels done for all three forks. Still need to verify `COPILOT_GITHUB_TOKEN` secret and PR-creation permission on `config-reloader`, `fluent-bit`, `fluentd` (can't read secrets via API — check manually).
 2. **Run the smoke test on a real cluster.** Mario plans to do this on a separate machine. Awaiting result before pushing the chart-side PR upstream.
 3. **Render the chart asset** for the suse1 version. Don't render on macOS — see Known Issues. Either run charts-build-scripts in `ghcr.io/rancher/ci-image/charts` via Docker, or push to upstream and let CI render.
 4. **Bind the build pipelines to the chart via dispatch events.** Each fork's `build.yaml` needs a `repository_dispatch` step that pings `ob-team-charts`. A receiver workflow in `ob-team-charts` updates the patch + version, runs `make charts`, opens a PR.
