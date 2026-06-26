@@ -48,13 +48,12 @@ Build a system to replace upstream rancher-logging stack images with **Rancher-b
 
 1. **Per-fork repo setup** still pending for `config-reloader`, `fluent-bit`, `fluentd` — labels, COPILOT_GITHUB_TOKEN, PR-creation permission (see "Repo Setup Requirements" below). logging-operator was set up early.
 2. **Run the smoke test on a real cluster.** Mario plans to do this on a separate machine. Awaiting result before pushing the chart-side PR upstream.
-3. **Make all three `manno/*` repos public** OR provide a `GHCR_USER/GHCR_TOKEN` to the test cluster. Currently only `logging-operator` is public; the chart can't pull `config-reloader` + `fluent-bit` without imagePullSecret.
-4. **Render the chart asset** for the suse1 version. Don't render on macOS — see Known Issues. Either run charts-build-scripts in `ghcr.io/rancher/ci-image/charts` via Docker, or push to upstream and let CI render.
-5. **Bind the build pipelines to the chart via dispatch events.** Each fork's `build.yaml` needs a `repository_dispatch` step that pings `ob-team-charts`. A receiver workflow in `ob-team-charts` updates the patch + version, runs `make charts`, opens a PR.
-6. **Migrate fluentd to bci-ruby:3.3** — still deferred (Alpine + Sumo base kept). Largest remaining supply-chain risk: depends on Sumo's public ECR refresh cadence.
-7. **Cut versioned release tags** (`v4.10.0-suse1` etc.) and replace `dev-<sha>` pins in the chart with versioned ones.
-8. **Decide on production registry** (currently `ghcr.io/manno/`).
-9. **Add an agentic workflow that reacts to open weekly-health-check issues.** The existing `weekly-health-check.md` workflow posts its report as an issue; a follow-up workflow should triage/respond to those (e.g., open PRs for actionable items, comment with diagnosis, close stale ones). Same `gh-aw` pattern as `cve-response.md` — slash-command or `workflow_dispatch` trigger, scoped permissions, safe-outputs for issue comments.
+3. **Render the chart asset** for the suse1 version. Don't render on macOS — see Known Issues. Either run charts-build-scripts in `ghcr.io/rancher/ci-image/charts` via Docker, or push to upstream and let CI render.
+4. **Bind the build pipelines to the chart via dispatch events.** Each fork's `build.yaml` needs a `repository_dispatch` step that pings `ob-team-charts`. A receiver workflow in `ob-team-charts` updates the patch + version, runs `make charts`, opens a PR.
+5. **Migrate fluentd to bci-ruby:3.3** — still deferred (Alpine + Sumo base kept). Largest remaining supply-chain risk: depends on Sumo's public ECR refresh cadence.
+6. **Cut versioned release tags** (`v4.10.0-suse1` etc.) and replace `dev-<sha>` pins in the chart with versioned ones.
+7. **Decide on production registry** (currently `ghcr.io/manno/`).
+8. **Add an agentic workflow that reacts to open weekly-health-check issues.** The existing `weekly-health-check.md` workflow posts its report as an issue; a follow-up workflow should triage/respond to those (e.g., open PRs for actionable items, comment with diagnosis, close stale ones). Same `gh-aw` pattern as `cve-response.md` — slash-command or `workflow_dispatch` trigger, scoped permissions, safe-outputs for issue comments.
 
 ---
 
