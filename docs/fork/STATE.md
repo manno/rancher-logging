@@ -42,7 +42,7 @@ Build a system to replace upstream rancher-logging stack images with **Rancher-b
 
 **Chart-side draft PR exists** at [manno/ob-team-charts#1](https://github.com/manno/ob-team-charts/pull/1) on branch `rancher-logging-4.10-suse1`. Swaps the chart's default image refs to the three SUSE tags above and bumps the version to `4.10.0-rancher.24-suse1`. Not rendered yet.
 
-**Smoke test script** at `ob-team-charts/dev-scripts/smoke-test-rancher-logging.sh` (committed on branch `add-rancher-logging-smoke-test` of `manno/ob-team-charts`). Parameterized for release-pipeline reuse. Verifies: chart installs → operator Ready → Logging CR rolls out fluentbit DaemonSet + fluentd StatefulSet → sentinel log line flows through fluentd stdout.
+**Smoke test script** at [`smoke-test-rancher-logging.sh`](https://github.com/manno/rancher-logging/blob/main/smoke-test-rancher-logging.sh) in this repo. Parameterized for release-pipeline reuse. Verifies: chart installs → operator Ready → Logging CR rolls out fluentbit DaemonSet + fluentd StatefulSet → sentinel log line flows through fluentd stdout.
 
 ### What's Pending
 
