@@ -54,9 +54,7 @@ locally). Necessary because `GITHUB_TOKEN` can't modify `.github/workflows/` fil
 **Code frozen at upstream 4.10.0** — security comes from rebuilding with fresh
 Go/BCI/gems, not from cherry-picking upstream changes. No breaking changes for users.
 
-**Fluentd BCI migration deferred** — the SUSE pipeline is green on branch
-`bci-ruby-migration` ([PR #6](https://github.com/manno/fluentd/pull/6)) but hasn't replaced
-the Alpine+Sumo track yet. Largest remaining supply-chain risk.
+**Fluentd BCI migration done** — `Dockerfile.suse` on `rancher-main` builds via `artifacts-suse.yaml`, pushing `-suse` suffixed tags in parallel to the Alpine track. Once validated end-to-end, the Alpine Dockerfile can be retired.
 
 ---
 

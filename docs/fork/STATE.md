@@ -21,7 +21,7 @@ Build a system to replace upstream rancher-logging stack images with **Rancher-b
 | logging-operator | Go | bci-micro | ✅ Pushed; builds green; multi-arch `:dev-<sha>` manifest published |
 | config-reloader | Go | bci-micro | ✅ Pushed; builds green; multi-arch `:dev-<sha>` manifest published |
 | fluent-bit | C | bci-base (all stages) | ✅ Pushed; builds green; multi-arch `:dev-<sha>` manifest published. Debug variant removed |
-| fluentd | Ruby | Alpine + Sumo (BCI migration deferred) | ⚠️ Automation workflows only — no `build.yaml`. Image still upstream `mirrored-kube-logging-fluentd:v1.16-4.10-full` |
+| fluentd | Ruby | bci-ruby | ✅ BCI migration merged to `rancher-main`; `-suse` tagged images build via `artifacts-suse.yaml` alongside the Alpine track |
 
 ---
 
@@ -50,10 +50,9 @@ Build a system to replace upstream rancher-logging stack images with **Rancher-b
 2. **Run the smoke test on a real cluster.** Mario plans to do this on a separate machine. Awaiting result before pushing the chart-side PR upstream.
 3. **Render the chart asset** for the suse1 version. Don't render on macOS — see Known Issues. Either run charts-build-scripts in `ghcr.io/rancher/ci-image/charts` via Docker, or push to upstream and let CI render.
 4. **Bind the build pipelines to the chart via dispatch events.** Each fork's `build.yaml` needs a `repository_dispatch` step that pings `ob-team-charts`. A receiver workflow in `ob-team-charts` updates the patch + version, runs `make charts`, opens a PR.
-5. **Migrate fluentd to bci-ruby:3.3** — still deferred (Alpine + Sumo base kept). Largest remaining supply-chain risk: depends on Sumo's public ECR refresh cadence.
-6. **Cut versioned release tags** (`v4.10.0-suse1` etc.) and replace `dev-<sha>` pins in the chart with versioned ones.
-7. **Decide on production registry** (currently `ghcr.io/manno/`).
-8. **Add an agentic workflow that reacts to open weekly-health-check issues.** The existing `weekly-health-check.md` workflow posts its report as an issue; a follow-up workflow should triage/respond to those (e.g., open PRs for actionable items, comment with diagnosis, close stale ones). Same `gh-aw` pattern as `cve-response.md` — slash-command or `workflow_dispatch` trigger, scoped permissions, safe-outputs for issue comments.
+5. **Cut versioned release tags** (`v4.10.0-suse1` etc.) and replace `dev-<sha>` pins in the chart with versioned ones.
+6. **Decide on production registry** (currently `ghcr.io/manno/`).
+7. **Add an agentic workflow that reacts to open weekly-health-check issues.** The existing `weekly-health-check.md` workflow posts its report as an issue; a follow-up workflow should triage/respond to those (e.g., open PRs for actionable items, comment with diagnosis, close stale ones). Same `gh-aw` pattern as `cve-response.md` — slash-command or `workflow_dispatch` trigger, scoped permissions, safe-outputs for issue comments.
 
 ---
 
