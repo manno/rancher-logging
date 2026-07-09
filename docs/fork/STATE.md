@@ -1,6 +1,6 @@
 # Rancher Logging Fork POC — Current State
 
-> **Last updated**: 2026-06-03
+> **Last updated**: 2026-07-09
 > **Purpose**: Self-contained snapshot of the rancher-logging fork POC, intended for a fresh agent to continue the work without reading the conversation history.
 
 ## Mission
@@ -21,7 +21,7 @@ Build a system to replace upstream rancher-logging stack images with **Rancher-b
 | logging-operator | Go | bci-micro | ✅ Pushed; builds green; multi-arch `:dev-<sha>` manifest published |
 | config-reloader | Go | bci-micro | ✅ Pushed; builds green; multi-arch `:dev-<sha>` manifest published |
 | fluent-bit | C | bci-base (all stages) | ✅ Pushed; builds green; multi-arch `:dev-<sha>` manifest published. Debug variant removed |
-| fluentd | Ruby | bci-ruby | ✅ BCI migration merged to `rancher-main`; `-suse` tagged images build via `artifacts-suse.yaml` alongside the Alpine track |
+| fluentd | Ruby | bci-ruby | ✅ BCI migration complete; `-suse` images build via `artifacts-suse.yaml`; dispatch pipeline wired; `full` image verified running in cluster |
 
 ---
 
@@ -35,24 +35,27 @@ Build a system to replace upstream rancher-logging stack images with **Rancher-b
 - `manno/fluent-bit` (rancher-main from upstream `v3.1.8`) — private
 - `manno/fluentd` (rancher-main from upstream `main` of `kube-logging/fluentd-images`) — private
 
-**All three Go/C build pipelines now publish multi-arch images.** Each push to `rancher-main` produces a `:dev-<sha>` manifest list (amd64 + arm64) at `ghcr.io/manno/<repo>`. Verified tags as of last build:
-- `ghcr.io/manno/logging-operator:dev-1ac7739f`
-- `ghcr.io/manno/config-reloader:dev-e7126dbf`
-- `ghcr.io/manno/fluent-bit:dev-1647f32fb`
+**All four build pipelines publish multi-arch images.** Each push to `rancher-main` produces a `:dev-<sha>` manifest list (amd64 + arm64). Current tags in use:
+- `ghcr.io/manno/logging-operator:dev-775aefe4`
+- `ghcr.io/manno/config-reloader:dev-54f3a9a`
+- `ghcr.io/manno/fluent-bit:dev-4a98803c1`
+- `ghcr.io/manno/fluentd:v1.16-4.10-full-suse`
 
-**Chart-side draft PR exists** at [manno/ob-team-charts#1](https://github.com/manno/ob-team-charts/pull/1) on branch `rancher-logging-4.10-suse1`. Swaps the chart's default image refs to the three SUSE tags above and bumps the version to `4.10.0-rancher.24-suse1`. Not rendered yet.
+**End-to-end dispatch pipeline operational.** Each fork's build workflow dispatches `image-updated` to `manno/ob-team-charts`. The `image-update.yaml` workflow resets `auto/rancher-logging-suse-updates` from `origin/rancher-logging-4.10-suse1`, updates `values.yaml.patch`, bumps the chart version, and opens/updates a PR.
 
-**Smoke test script** at [`smoke-test-rancher-logging.sh`](https://github.com/manno/rancher-logging/blob/main/smoke-test-rancher-logging.sh) in this repo. Parameterized for release-pipeline reuse. Verifies: chart installs → operator Ready → Logging CR rolls out fluentbit DaemonSet + fluentd StatefulSet → sentinel log line flows through fluentd stdout.
+**Chart rendered at `4.10.0-rancher.30-suse1`** in `manno/ob-team-charts` on branch `rancher-logging-4.10-suse1`. All four SUSE images are referenced in `values.yaml.patch`.
+
+**Smoke test script** at `ob-team-charts/dev-scripts/smoke-test-rancher-logging.sh`. Verified working: chart installs → operator Ready → Logging CR rolls out fluentbit DaemonSet + fluentd StatefulSet. Skips log-flow check (`SKIP_LOG_FLOW_TEST=1`) in `make dev-test`.
+
+**Deployed to k3d cluster.** Chart installed as release `rancher-logging` in `cattle-logging-system`. All four SUSE images confirmed running (no `--set` overrides needed — images baked into chart values).
 
 ### What's Pending
 
-1. **Per-fork repo setup** — labels done for all three forks. Still need to verify `COPILOT_GITHUB_TOKEN` secret and PR-creation permission on `config-reloader`, `fluent-bit`, `fluentd` (can't read secrets via API — check manually).
-2. **Run the smoke test on a real cluster.** Mario plans to do this on a separate machine. Awaiting result before pushing the chart-side PR upstream.
-3. **Render the chart asset** for the suse1 version. Don't render on macOS — see Known Issues. Either run charts-build-scripts in `ghcr.io/rancher/ci-image/charts` via Docker, or push to upstream and let CI render.
-4. **Bind the build pipelines to the chart via dispatch events.** ✅ Done — each fork's `build.yaml` dispatches `image-updated` to `ob-team-charts` after a `rancher-main` push; `image-update.yaml` in `ob-team-charts` updates the tag in `values.yaml.patch`, bumps the version, and opens/updates a PR on `auto/rancher-logging-suse-updates`. **Still needed**: set `CHARTS_DISPATCH_TOKEN` secret (fine-grained PAT with workflow write on `manno/ob-team-charts`) on `config-reloader`, `fluent-bit`, and `logging-operator`.
-5. **Cut versioned release tags** (`v4.10.0-suse1` etc.) and replace `dev-<sha>` pins in the chart with versioned ones.
-6. **Decide on production registry** (currently `ghcr.io/manno/`).
-7. **Add an agentic workflow that reacts to open weekly-health-check issues.** The existing `weekly-health-check.md` workflow posts its report as an issue; a follow-up workflow should triage/respond to those (e.g., open PRs for actionable items, comment with diagnosis, close stale ones). Same `gh-aw` pattern as `cve-response.md` — slash-command or `workflow_dispatch` trigger, scoped permissions, safe-outputs for issue comments.
+1. **Per-fork repo setup** — labels done for all forks. Verify `COPILOT_GITHUB_TOKEN` secret and PR-creation permission on `config-reloader`, `fluent-bit`, `fluentd` (can't read secrets via API — check manually).
+2. **Cut versioned release tags** (`v4.10.0-suse1` etc.) and replace `dev-<sha>` pins in the chart with versioned ones.
+3. **Decide on production registry** (currently `ghcr.io/manno/`).
+4. **Add an agentic workflow that reacts to open weekly-health-check issues.** The existing `weekly-health-check.md` workflow posts its report as an issue; a follow-up workflow should triage/respond to those (e.g., open PRs for actionable items, comment with diagnosis, close stale ones). Same `gh-aw` pattern as `cve-response.md` — slash-command or `workflow_dispatch` trigger, scoped permissions, safe-outputs for issue comments.
+5. **PR the branch to upstream `rancher/ob-team-charts`** once production registry and release tags are decided.
 
 ---
 
@@ -281,27 +284,29 @@ gh aw secrets bootstrap --engine copilot --non-interactive --repo manno/<fork>
 
 ### Low priority
 7. **Tag scheme** — `dev-<sha>` for branch builds is now verified working. Versioned `<tag>-suse1` for releases still untested (no release tag cut yet).
+8. **Cross-repo dispatch should use a GitHub App token, not a PAT** — currently `CHARTS_DISPATCH_TOKEN` is a long-lived fine-grained PAT stored as a repo secret. The production Rancher pattern (see `rancher/fleet` `release.yml` `dispatch-charts-bump` job) uses a GitHub App:
+   - Vault stores `appId` + `privateKey`.
+   - `actions/create-github-app-token` mints a **short-lived (1 h), auto-rotating token** scoped to only the target repos with `permission-actions: write`.
+   - `GH_TOKEN` in the dispatch step uses that token — no PAT rotation required.
+   Using a PAT is fine for `manno/` personal forks during the POC; when workflows move to `rancher/` org repos, adopt the App token pattern to match the org standard.
 
 ---
 
-## Chart Integration (In Progress)
+## Chart Integration (Active)
 
-Image-ref updates land on `manno/ob-team-charts` branch `rancher-logging-4.10-suse1` (draft PR #1). State as of 2026-06-03:
+Image-ref updates land automatically on `manno/ob-team-charts` branch `rancher-logging-4.10-suse1` via the dispatch pipeline. Current state (rendered chart: `4.10.0-rancher.30-suse1`):
 
-| field | new value | status |
+| field | value | status |
 |---|---|---|
-| `image` (logging-operator) | `ghcr.io/manno/logging-operator:dev-1ac7739f` | ✅ in patch |
-| `images.config_reloader` | `ghcr.io/manno/config-reloader:dev-e7126dbf` | ✅ in patch |
-| `images.fluentbit` | `ghcr.io/manno/fluent-bit:dev-1647f32fb` | ✅ in patch |
-| `images.fluentbit_debug` | `ghcr.io/manno/fluent-bit:dev-1647f32fb` | ✅ in patch (same as fluentbit; debug variant dropped) |
-| `images.fluentd` | unchanged (upstream mirror) | ⏭️ fluentd SUSE rebuild deferred |
+| `image` (logging-operator) | `ghcr.io/manno/logging-operator:dev-775aefe4` | ✅ in patch, verified running |
+| `images.config_reloader` | `ghcr.io/manno/config-reloader:dev-54f3a9a` | ✅ in patch, verified running |
+| `images.fluentbit` | `ghcr.io/manno/fluent-bit:dev-4a98803c1` | ✅ in patch, verified running |
+| `images.fluentbit_debug` | `ghcr.io/manno/fluent-bit:dev-4a98803c1` | ✅ in patch (same as fluentbit; debug variant dropped) |
+| `images.fluentd` | `ghcr.io/manno/fluentd:v1.16-4.10-full-suse` | ✅ in patch, verified running |
 | `images.nodeagent_fluentbit` | unchanged | ⏭️ Windows; no SUSE alternative |
-| chart version | `4.10.0-rancher.23` → `4.10.0-rancher.24-suse1` | ✅ in package.yaml |
+| chart version | `4.10.0-rancher.30-suse1` | ✅ rendered in `charts/` |
 
-**Not done yet**:
-- Chart asset not rendered. Render via `ghcr.io/rancher/ci-image/charts` in Docker, OR push branch upstream and let CI render. Don't render on macOS — see Known Issues / Decision #11.
-- Smoke test on a real cluster (`ob-team-charts/dev-scripts/smoke-test-rancher-logging.sh`).
-- After verification, PR the branch to upstream `rancher/ob-team-charts`.
+**Still to do**: cut versioned release tags; decide production registry; PR to upstream `rancher/ob-team-charts`.
 
 **Backward compatibility**: Field NAMES stay identical (`image.repository`, `images.fluentbit.repository`, etc.). Only default VALUES change. User overrides continue to work.
 
