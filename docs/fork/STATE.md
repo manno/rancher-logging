@@ -31,9 +31,11 @@ Build a system to replace upstream rancher-logging stack images with **Rancher-b
 
 **All 4 forks created in `manno/`** based on:
 - `manno/logging-operator` (rancher-main from upstream `4.10.0`) — **public**
-- `manno/config-reloader` (rancher-main from upstream `v0.0.7`) — private
-- `manno/fluent-bit` (rancher-main from upstream `v3.1.8`) — private
-- `manno/fluentd` (rancher-main from upstream `main` of `kube-logging/fluentd-images`) — private
+- `manno/config-reloader` (rancher-main from upstream `v0.0.7`) — **public**
+- `manno/fluent-bit` (rancher-main from upstream `v3.1.8`) — **public**
+- `manno/fluentd` (rancher-main from upstream `main` of `kube-logging/fluentd-images`) — **public**
+
+All four repos and their GHCR packages are public (verified 2026-07-13); anonymous `docker pull` returns 200.
 
 **All four build pipelines publish multi-arch images.** Each push to `rancher-main` produces a `:dev-<sha>` manifest list (amd64 + arm64). Current tags in use:
 - `ghcr.io/manno/logging-operator:dev-775aefe4`
@@ -127,11 +129,11 @@ gh workflow run cve-response \
 
 **Why**: Upstream doesn't actively backport to 4.10.x. We maintain the frozen code version. Security comes from rebuilds, not code changes.
 
-### 7. Forks are PRIVATE (except `manno/logging-operator`)
+### 7. Forks are PUBLIC (POC)
 
-**Why**: Workflows reference internal Rancher infrastructure (image-scanning repo, eventual Vault secrets, prime registries). Public forks would leak this.
+**Original intent**: keep forks private because workflows reference internal Rancher infrastructure (image-scanning repo, eventual Vault secrets, prime registries), which public forks would leak.
 
-**Drift**: `manno/logging-operator` was flipped to public during the POC for easier ghcr testing. The other three (`config-reloader`, `fluent-bit`, `fluentd`) remain private. For the smoke test on a real cluster, either flip the other two public OR supply `GHCR_USER/GHCR_TOKEN` so the test creates an imagePullSecret.
+**Current state (2026-07-13)**: all four forks (`logging-operator`, `config-reloader`, `fluent-bit`, `fluentd`) AND their GHCR packages were flipped **public** during the POC for easier ghcr testing — anonymous `docker pull` returns 200, so the k3d smoke test needs no imagePullSecret. When these workflows move to `rancher/` org repos, revisit privacy for anything that would leak internal infrastructure.
 
 ### 8. Multi-arch manifest list via `imagetools create` (not single-buildx)
 
@@ -279,7 +281,7 @@ gh aw secrets bootstrap --engine copilot --non-interactive --repo manno/<fork>
 ### Medium priority
 3. **fluentd fork has no `build.yaml`** — still automation only. Migration to bci-ruby blocked on Sumo base decision (see Decision #4).
 4. **Image registry decision** — currently `ghcr.io/manno/`. Production probably wants `rancher/` (DockerHub) or multi-registry per `docs/logging/fork/agentic-workflows.md`.
-5. **`config-reloader` + `fluent-bit` are still private on ghcr** — blocks real-cluster testing without imagePullSecret. Easiest: flip public for the POC.
+5. ~~**`config-reloader` + `fluent-bit` are still private on ghcr**~~ — RESOLVED (2026-07-13). All four repos AND their GHCR packages are public; anonymous `docker pull` returns 200. No imagePullSecret needed for real-cluster testing.
 6. **`:latest` manifest in fluent-bit's `.goreleaser.yaml`** is amd64-only (lines around `name_template: ".../:latest"`). `:Tag-suse1` works correctly. Only matters for the goreleaser release path; the dev-<sha> workflow path is unaffected.
 
 ### Low priority
@@ -313,6 +315,52 @@ Image-ref updates land automatically on `manno/ob-team-charts` branch `rancher-l
 **Windows `nodeagent_fluentbit`**: SUSE BCI is Linux-only. Kept on the existing Windows image; no SUSE variant planned.
 
 **Tag-bumping later**: Once we cut versioned releases on the forks (`v4.10.0-suse1` etc.), the `dev-<sha>` pins above get replaced with the versioned tags. Same shape, different values.
+
+---
+
+## Auto-merge Gate (`image-update.yaml`)
+
+The dispatch pipeline **auto-merges** the rolling image-bump PR with no human
+click — but only when the change is mechanical by construction. Rationale: a
+pre-merge human review of a bot-authored version bump adds almost no safety (the
+reviewer can't re-vet a tag or fix a CI flake by reading the diff), so the merge
+is gated on **inputs + reproducibility + a real functional test**, not on diff
+size. See `auto-merge-chart-pr-prompt.md` and the rancher-architecture
+"UnRC toil in rancher/charts" note for the policy.
+
+**Why not `gh pr merge --auto` + branch protection (the "canonical" way):** the
+suse1 branch has no branch protection, and — more fundamentally — PRs opened
+with the default `GITHUB_TOKEN` do **not** trigger `on: pull_request` workflows
+(GitHub's recursion guard). So there are no PR status checks to wait on. Instead
+the workflow runs verification **itself** and merges directly. `pr.yml`
+(`ob-charts-tool branchVerifyCheck`) is only a chart-versioning/lifecycle lint —
+it renders nothing and tests nothing — so it is deliberately **not** used as the
+gate.
+
+**Three jobs** in `image-update.yaml`:
+1. `update` — generate (extracted to `.github/workflows/image-update/*.py`),
+   commit, force-push, open/update the PR, then run `gate.sh` (criteria 1–4).
+2. `verify` — `make render` (chart actually packages with the new tag) + k3d
+   `smoke-test-rancher-logging.sh` (operator Ready, fluentbit DS, fluentd STS).
+   This is the "CI green" gate. Captures outcome into `verify_ok`; never fails
+   the run.
+3. `merge` — if `gate_ok && verify_ok`, `gh pr merge --squash`. Otherwise
+   comment the reason and leave the PR open for a human.
+
+**Gate criteria** (`gate.sh`): (1) PR authored by `github-actions[bot]` + labeled
+`automated`; (2) only the two expected files change, and only `tag:` lines (plus
+the one-time fluentd mirror→SUSE repo string); (3) tag is well-formed,
+non-prerelease, and (best-effort) resolves in GHCR; (4) re-running the generators
+from `origin/rancher-logging-4.10-suse1` reproduces a byte-identical diff.
+
+**Image pull — no secret needed**: all four GHCR packages
+(`logging-operator`, `config-reloader`, `fluent-bit`, `fluentd`) are **public**
+at the package level (verified anonymous `docker pull` returns 200), so the k3d
+smoke test pulls them without auth. Only if a package is later made private do
+you need a `GHCR_PULL_TOKEN` (+ optional `GHCR_PULL_USER`) secret on
+`manno/ob-team-charts`; the verify job passes it through as the smoke test's
+imagePullSecret. This would be a pull token only — unrelated to the cross-repo
+dispatch PAT tech-debt (#8).
 
 ---
 
