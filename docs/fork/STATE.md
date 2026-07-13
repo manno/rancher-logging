@@ -51,13 +51,14 @@ All four repos and their GHCR packages are public (verified 2026-07-13); anonymo
 
 **Deployed to k3d cluster.** Chart installed as release `rancher-logging` in `cattle-logging-system`. All four SUSE images confirmed running (no `--set` overrides needed — images baked into chart values).
 
+**Health-check responder agent live.** `health-check-responder.md`/`.lock.yml` exist in `manno/logging-operator`. Triggered by `workflow_run` on the `Weekly Health Check — Logging Operator (SUSE Rebuild)` workflow (`types: [completed]`, `branches: [rancher-main]`) plus `workflow_dispatch`. Reads the health-report issue, classifies High Priority findings, and dispatches `auto-update-go`/`auto-update-bci`/`cve-response` or comments on stale PRs — the "hands" to the health check's "eyes."
+
 ### What's Pending
 
 1. **Per-fork repo setup** — labels done for all forks. Verify `COPILOT_GITHUB_TOKEN` secret and PR-creation permission on `config-reloader`, `fluent-bit`, `fluentd` (can't read secrets via API — check manually).
 2. **Cut versioned release tags** (`v4.10.0-suse1` etc.) and replace `dev-<sha>` pins in the chart with versioned ones.
 3. **Decide on production registry** (currently `ghcr.io/manno/`).
-4. **Add an agentic workflow that reacts to open weekly-health-check issues.** The existing `weekly-health-check.md` workflow posts its report as an issue; a follow-up workflow should triage/respond to those (e.g., open PRs for actionable items, comment with diagnosis, close stale ones). Same `gh-aw` pattern as `cve-response.md` — slash-command or `workflow_dispatch` trigger, scoped permissions, safe-outputs for issue comments.
-5. **PR the branch to upstream `rancher/ob-team-charts`** once production registry and release tags are decided.
+4. **PR the branch to upstream `rancher/ob-team-charts`** once production registry and release tags are decided.
 
 ---
 
@@ -291,6 +292,7 @@ gh aw secrets bootstrap --engine copilot --non-interactive --repo manno/<fork>
    - `actions/create-github-app-token` mints a **short-lived (1 h), auto-rotating token** scoped to only the target repos with `permission-actions: write`.
    - `GH_TOKEN` in the dispatch step uses that token — no PAT rotation required.
    Using a PAT is fine for `manno/` personal forks during the POC; when workflows move to `rancher/` org repos, adopt the App token pattern to match the org standard.
+9. **`health-check-responder.md` uses `bash: true`** — the other two agentic workflows (`cve-response.md`, `weekly-health-check.md`) use an explicit `bash:` command allow-list. Tighten `health-check-responder` to a scoped allow-list to match the least-privilege pattern.
 
 ---
 
@@ -333,9 +335,12 @@ suse1 branch has no branch protection, and — more fundamentally — PRs opened
 with the default `GITHUB_TOKEN` do **not** trigger `on: pull_request` workflows
 (GitHub's recursion guard). So there are no PR status checks to wait on. Instead
 the workflow runs verification **itself** and merges directly. `pr.yml`
-(`ob-charts-tool branchVerifyCheck`) is only a chart-versioning/lifecycle lint —
-it renders nothing and tests nothing — so it is deliberately **not** used as the
-gate.
+(`ob-charts-tool branchVerifyCheck`) was **removed** from the fork (2026-07-13):
+it is a chart-versioning/publishing lint for upstream rancher/charts — it renders
+nothing and runs no smoke test, and its image-origin check hard-requires
+`rancher/...` repos so it failed by construction on our `ghcr.io/manno/` images.
+Upstream's own `pr.yml` will run if/when this branch is PR'd to
+`rancher/ob-team-charts`.
 
 **Three jobs** in `image-update.yaml`:
 1. `update` — generate (extracted to `.github/workflows/image-update/*.py`),
