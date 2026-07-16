@@ -12,6 +12,7 @@ repo that ships them.
 | [`config-reloader/`](https://github.com/manno/config-reloader/blob/rancher-main/RANCHER.md) | `kube-logging/config-reloader` | `manno/config-reloader` | Config-reloader sidecar SUSE image |
 | [`fluent-bit/`](https://github.com/manno/fluent-bit/blob/rancher-main/RANCHER.md) | `fluent/fluent-bit` | `manno/fluent-bit` | Fluent-bit SUSE image |
 | [`fluentd/`](https://github.com/manno/fluentd/blob/rancher-main/RANCHER.md) | `kube-logging/fluentd-images` | `manno/fluentd` (branch `rancher-main`, scope `v1.16-4.10/`) | Fluentd image — **SUSE pipeline green**, parallel to Alpine on branch `bci-ruby-migration` ([PR #6](https://github.com/manno/fluentd/pull/6)); awaiting smoke test |
+| [`ob-team-charts/`](https://github.com/manno/ob-team-charts) | `rancher/ob-team-charts` | `manno/ob-team-charts` (branch `rancher-logging-4.10-suse1`) | Chart repo — consumes the four images above at `packages/rancher-logging/4.10/` |
 
 The chart that consumes these images lives in a sibling checkout:
 `../ob-team-charts/packages/rancher-logging/4.10/`.
